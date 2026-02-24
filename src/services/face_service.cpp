@@ -1,14 +1,14 @@
 #include "face_service.hpp"
 #include "../config/settings.hpp"
 #include <opencv2/imgproc.hpp>
-#include <iostream>
+#include <stdexcept>
 
 namespace services {
 
 FaceService::FaceService() {
     if (!cascade_.load(config::HAAR_CASCADE_PATH)) {
-        std::cerr << "Error: cannot load Haar cascade from "
-                  << config::HAAR_CASCADE_PATH << "\n";
+        throw std::runtime_error(
+            "Cannot load Haar cascade from " + config::HAAR_CASCADE_PATH);
     }
 }
 

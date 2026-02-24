@@ -21,6 +21,13 @@ MainWindow::~MainWindow() {
     if (detectionThread_.joinable()) {
         detectionThread_.join();
     }
+    // Join the outstanding AWS thread if any
+    {
+        std::lock_guard<std::mutex> lock(awsThreadMutex_);
+        if (awsThread_active_.joinable()) {
+            awsThread_active_.join();
+        }
+    }
     camera_.release();
     cv::destroyAllWindows();
 }
@@ -53,7 +60,8 @@ void MainWindow::run() {
                     default: color = cv::Scalar(255, 255, 255);      // white
                 }
                 cv::putText(frame, statusText_, cv::Point(20, 40),
-                            cv::FONT_HERSHEY_SIMPLEX, 1.0, color, 2);
+                            cv::FONT_HERSHEY_SIMPLEX, config::FONT_SCALE,
+                            color, config::FONT_THICKNESS);
             }
 
             cv::imshow(WINDOW_NAME, frame);
@@ -118,9 +126,15 @@ void MainWindow::detectionLoop() {
 
                     cv::Mat crop = frame(cv::Rect(x, y, x2 - x, y2 - y)).clone();
 
-                    // Spawn AWS call on a separate thread
-                    std::thread(&MainWindow::awsThread, this, std::move(crop))
-                        .detach();
+                    // Spawn AWS call on a tracked thread
+                    {
+                        std::lock_guard<std::mutex> lock(awsThreadMutex_);
+                        if (awsThread_active_.joinable()) {
+                            awsThread_active_.join();
+                        }
+                        awsThread_active_ = std::thread(
+                            &MainWindow::awsThread, this, std::move(crop));
+                    }
                 }
             }
         }
@@ -128,7 +142,7 @@ void MainWindow::detectionLoop() {
 }
 
 // ---------------------------------------------------------------------------
-// AWS recognition – runs on a short-lived detached thread
+// AWS recognition – runs on a tracked background thread
 // ---------------------------------------------------------------------------
 void MainWindow::awsThread(cv::Mat faceCrop) {
     try {

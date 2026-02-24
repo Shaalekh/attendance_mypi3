@@ -119,7 +119,7 @@ Press **Esc** to quit.
 
 ## Performance Notes
 
-- Compiled with `-mcpu=cortex-a53 -mfpu=neon-fp-armv8` on ARM targets for hardware-specific optimizations.
+- Compiled with `-mcpu=cortex-a53` on ARM targets. On 32-bit ARM OS the build also enables `-mfpu=neon-fp-armv8 -mfloat-abi=hard`; on 64-bit ARM (AArch64) NEON is enabled by default.
 - The pipelined multi-threaded design ensures camera capture, face detection, AWS calls, and UI rendering all run concurrently across the four CPU cores.
 - Frame processing is lock-minimized: only the latest frame and status text use mutexes, and frame copies use `cv::Mat::copyTo` for efficient deep copies.
 

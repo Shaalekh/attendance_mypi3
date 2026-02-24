@@ -1,6 +1,6 @@
 #include "camera_service.hpp"
 #include "../config/settings.hpp"
-#include <iostream>
+#include <stdexcept>
 
 namespace services {
 
@@ -12,12 +12,12 @@ CameraService::CameraService() {
         // Fall back to default backend
         cap_.open(0);
     }
-    if (!cap_.isOpened()) {
-        std::cerr << "Error: cannot open camera\n";
-        return;
-    }
     cap_.set(cv::CAP_PROP_FRAME_WIDTH,  config::CAMERA_WIDTH);
     cap_.set(cv::CAP_PROP_FRAME_HEIGHT, config::CAMERA_HEIGHT);
+
+    if (!cap_.isOpened()) {
+        throw std::runtime_error("Cannot open camera device");
+    }
 }
 
 CameraService::~CameraService() {

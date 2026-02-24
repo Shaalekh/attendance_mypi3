@@ -28,6 +28,10 @@ constexpr int DETECT_FRAME_INTERVAL = 3;
 // UI refresh interval (milliseconds)
 constexpr int UI_REFRESH_MS = 30;
 
+// UI text overlay settings
+constexpr double FONT_SCALE     = 1.0;
+constexpr int    FONT_THICKNESS = 2;
+
 // AWS Rekognition settings
 const std::string COLLECTION_ID = "attendance_collection";
 constexpr int     MAX_FACES     = 1;

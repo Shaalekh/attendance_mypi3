@@ -55,6 +55,10 @@ private:
     // Recognition gating
     std::atomic<bool> processing_{false};
     std::chrono::steady_clock::time_point lastCheck_;
+
+    // Track the active AWS thread for clean shutdown
+    std::mutex awsThreadMutex_;
+    std::thread awsThread_active_;
 };
 
 } // namespace ui

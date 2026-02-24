@@ -5,10 +5,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ── ARM Cortex-A53 optimizations (Raspberry Pi 3) ──────────────────────────
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+    # 64-bit ARM: NEON is always enabled; just set the CPU target
+    add_compile_options(-mcpu=cortex-a53 -O2)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
+    # 32-bit ARM: explicitly enable NEON and hard float
     add_compile_options(
         -mcpu=cortex-a53
-        -mfpu=neon-fp-armv8    # NEON SIMD
+        -mfpu=neon-fp-armv8
         -mfloat-abi=hard
         -O2
     )
