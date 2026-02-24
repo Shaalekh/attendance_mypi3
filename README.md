@@ -1,56 +1,73 @@
-# Attendance System – Raspberry Pi 3
+# Attendance System – Raspberry Pi 3 (C++)
 
-A real-time face-recognition attendance system designed to run on a Raspberry Pi 3. It captures video from the Pi Camera, detects faces with OpenCV, and identifies them using AWS Rekognition. The result is displayed in a fullscreen Tkinter UI.
+A real-time face-recognition attendance system designed to run on a **Raspberry Pi 3** (ARM Cortex-A53 quad-core). It captures video from the Pi Camera, detects faces with OpenCV, and identifies them using AWS Rekognition — all written in **C++17** for maximum performance.
 
 ## Features
 
-- Fullscreen UI built with Tkinter
-- Live camera feed via Picamera2
-- Face detection using OpenCV Haar cascades
-- Face recognition using AWS Rekognition
-- Threaded AWS calls to keep the UI responsive
-- Recognition triggered only when a face is large enough (nearby), with a 3-second cooldown
+- **Multi-threaded pipeline** optimized for the quad-core ARM Cortex-A53:
+  - Thread 1 — Camera capture (continuous, lock-free latest-frame)
+  - Thread 2 — Face detection (runs on every 3rd frame, downscaled)
+  - Thread 3 — AWS Rekognition (spawned on demand per face)
+  - Main thread — UI rendering (OpenCV highgui fullscreen window)
+- Fullscreen display with status overlay
+- Face detection using OpenCV Haar cascades (C++ API)
+- Face recognition using AWS Rekognition (AWS SDK for C++)
+- NEON SIMD compiler hints for ARM Cortex-A53
+- 3-second cooldown between recognition calls
 
 ## Project Structure
 
 ```
 attendance_mypi3/
-├── main.py                  # Entry point
-├── config/
-│   └── settings.py          # Configuration settings
-├── services/
-│   ├── aws_service.py       # AWS Rekognition integration
-│   ├── camera_service.py    # Picamera2 camera capture
-│   └── face_service.py      # OpenCV face detection
-└── ui/
-    └── main_window.py       # Tkinter main window
+├── CMakeLists.txt                # Build system
+├── src/
+│   ├── main.cpp                  # Entry point (AWS SDK init)
+│   ├── config/
+│   │   └── settings.hpp          # Compile-time configuration
+│   ├── services/
+│   │   ├── aws_service.hpp/.cpp  # AWS Rekognition integration
+│   │   ├── camera_service.hpp/.cpp # Threaded V4L2 camera capture
+│   │   └── face_service.hpp/.cpp # OpenCV face detection
+│   └── ui/
+│       └── main_window.hpp/.cpp  # Fullscreen UI + detection loop
+├── main.py                       # Legacy Python entry point
+├── config/                       # Legacy Python config
+├── services/                     # Legacy Python services
+└── ui/                           # Legacy Python UI
 ```
 
 ## Requirements
 
 ### Hardware
 
-- Raspberry Pi 3
+- Raspberry Pi 3 (ARM Cortex-A53)
 - Raspberry Pi Camera Module (v1, v2, or HQ)
 
 ### Software
 
-- Python 3.8+
-- [Picamera2](https://github.com/raspberrypi/picamera2)
-- OpenCV (`opencv-python` or the system `python3-opencv` package)
-- Pillow
-- Boto3
-
-Install dependencies:
+Install build dependencies on Raspberry Pi OS:
 
 ```bash
-pip install boto3 opencv-python pillow picamera2
+sudo apt update
+sudo apt install -y \
+    build-essential cmake \
+    libopencv-dev \
+    libcurl4-openssl-dev libssl-dev zlib1g-dev
 ```
 
-> **Note:** On Raspberry Pi OS, `picamera2` and `opencv4` are best installed via `apt`:
-> ```bash
-> sudo apt install python3-picamera2 python3-opencv
-> ```
+Install the AWS SDK for C++ (Rekognition):
+
+```bash
+git clone --recurse-submodules https://github.com/aws/aws-sdk-cpp.git
+cd aws-sdk-cpp
+mkdir build && cd build
+cmake .. -DBUILD_ONLY="rekognition" \
+         -DCMAKE_BUILD_TYPE=Release \
+         -DBUILD_SHARED_LIBS=ON
+make -j4
+sudo make install
+sudo ldconfig
+```
 
 ### AWS Setup
 
@@ -73,24 +90,38 @@ pip install boto3 opencv-python pillow picamera2
    ```
    Provide your `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and preferred region (e.g. `eu-west-1`).
 
+## Building
+
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j4
+```
+
 ## Usage
 
 ```bash
-python main.py
+./build/attendance_system
 ```
 
 The application launches in fullscreen mode. To mark attendance, a person simply walks up close to the camera. Once the face is detected at sufficient size, the system automatically queries AWS Rekognition and displays the recognized name (green) or "Unknown" (red) on screen — no touching or interaction required.
 
-Press **Esc** to quit (development mode).
+Press **Esc** to quit.
 
 ## How It Works
 
-1. `CameraService` continuously captures frames from the Pi Camera at 640 × 480.
-2. `MainWindow` processes every third frame to reduce CPU load.
-3. `FaceService` runs an OpenCV Haar-cascade detector on a downscaled (320 × 240) copy of the frame.
-4. If a detected face is wide enough (> 120 px at original resolution) and the 3-second cooldown has elapsed, a background thread is spawned.
-5. `AWSService` encodes the cropped face as JPEG and calls `search_faces_by_image` against the Rekognition collection.
-6. The status label is updated with the result.
+1. `CameraService` runs a dedicated capture thread that continuously grabs frames from the Pi Camera at 640 × 480 via V4L2.
+2. `MainWindow::detectionLoop` runs on its own thread, pulling the latest frame and running detection every 3rd iteration.
+3. `FaceService::detectFaces` applies the OpenCV Haar-cascade detector on a downscaled (320 × 240) copy of the frame.
+4. If a detected face is wide enough (> 120 px at original resolution) and the 3-second cooldown has elapsed, a detached thread is spawned for AWS recognition.
+5. `AWSService::recognizeFace` encodes the cropped face as JPEG and calls `SearchFacesByImage` against the Rekognition collection via the AWS SDK for C++.
+6. The status text is updated thread-safely and rendered on the next UI frame.
+
+## Performance Notes
+
+- Compiled with `-mcpu=cortex-a53 -mfpu=neon-fp-armv8` on ARM targets for hardware-specific optimizations.
+- The pipelined multi-threaded design ensures camera capture, face detection, AWS calls, and UI rendering all run concurrently across the four CPU cores.
+- Frame processing is lock-minimized: only the latest frame and status text use mutexes, and frame copies use `cv::Mat::copyTo` for efficient deep copies.
 
 ## License
 
