@@ -109,32 +109,42 @@ void MainWindow::detectionLoop() {
             int w = static_cast<int>(f.width  * scaleX);
             int h = static_cast<int>(f.height * scaleY);
 
-            if (w > config::MIN_FACE_WIDTH_TRIGGER && !processing_.load()) {
+            if (w > config::MIN_FACE_WIDTH_TRIGGER) {
+                // Atomically claim the processing slot; if another
+                // iteration already set it we skip immediately.
+                bool expected = false;
+                if (!processing_.compare_exchange_strong(expected, true)) {
+                    continue;
+                }
+
                 auto now = std::chrono::steady_clock::now();
                 double elapsed =
                     std::chrono::duration<double>(now - lastCheck_).count();
 
-                if (elapsed > config::RECOGNITION_COOLDOWN_SEC) {
-                    processing_.store(true);
-                    lastCheck_ = now;
+                if (elapsed <= config::RECOGNITION_COOLDOWN_SEC) {
+                    // Still in cooldown – release the flag and skip
+                    processing_.store(false);
+                    continue;
+                }
 
-                    // Clamp ROI to frame boundaries
-                    int x2 = std::min(x + w, frame.cols);
-                    int y2 = std::min(y + h, frame.rows);
-                    x = std::max(x, 0);
-                    y = std::max(y, 0);
+                lastCheck_ = now;
 
-                    cv::Mat crop = frame(cv::Rect(x, y, x2 - x, y2 - y)).clone();
+                // Clamp ROI to frame boundaries
+                int x2 = std::min(x + w, frame.cols);
+                int y2 = std::min(y + h, frame.rows);
+                x = std::max(x, 0);
+                y = std::max(y, 0);
 
-                    // Spawn AWS call on a tracked thread
-                    {
-                        std::lock_guard<std::mutex> lock(awsThreadMutex_);
-                        if (awsThread_active_.joinable()) {
-                            awsThread_active_.join();
-                        }
-                        awsThread_active_ = std::thread(
-                            &MainWindow::awsThread, this, std::move(crop));
+                cv::Mat crop = frame(cv::Rect(x, y, x2 - x, y2 - y)).clone();
+
+                // Spawn AWS call on a tracked thread
+                {
+                    std::lock_guard<std::mutex> lock(awsThreadMutex_);
+                    if (awsThread_active_.joinable()) {
+                        awsThread_active_.join();
                     }
+                    awsThread_active_ = std::thread(
+                        &MainWindow::awsThread, this, std::move(crop));
                 }
             }
         }
