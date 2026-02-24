@@ -4,7 +4,7 @@ A real-time face-recognition attendance system designed to run on a Raspberry Pi
 
 ## Features
 
-- Fullscreen touchscreen-friendly UI built with Tkinter
+- Fullscreen UI built with Tkinter
 - Live camera feed via Picamera2
 - Face detection using OpenCV Haar cascades
 - Face recognition using AWS Rekognition
@@ -79,7 +79,7 @@ pip install boto3 opencv-python pillow picamera2
 python main.py
 ```
 
-The application launches in fullscreen mode. Hold a face close to the camera; when a face is detected at sufficient size the system queries AWS Rekognition and displays the recognised name (green) or "Unknown" (red) on screen.
+The application launches in fullscreen mode. To mark attendance, a person simply walks up close to the camera. Once the face is detected at sufficient size, the system automatically queries AWS Rekognition and displays the recognized name (green) or "Unknown" (red) on screen — no touching or interaction required.
 
 Press **Esc** to quit (development mode).
 
