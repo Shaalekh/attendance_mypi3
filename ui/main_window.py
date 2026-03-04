@@ -7,6 +7,7 @@ import threading
 from services.camera_service import CameraService
 from services.face_service import FaceService
 from services.aws_service import AWSService
+from ui.card_ui import CardUI
 
 
 class MainWindow:
@@ -25,6 +26,7 @@ class MainWindow:
         self.camera = CameraService()
         self.face_service = FaceService()
         self.aws_service = AWSService()
+        self.card_ui = CardUI(self.root)
 
         self.last_check = 0
         self.processing = False
@@ -96,13 +98,15 @@ class MainWindow:
 
     def aws_thread(self, frame):
         try:
-            name = self.aws_service.recognize_face(frame)
+            face_id = self.aws_service.recognize_face(frame)
 
-            if name:
+            if face_id:
                 self.status_label.config(
-                    text=f"Recognized: {name}",
+                    text=f"Recognized: {face_id}",
                     fg="green"
                 )
+                # Show profile card (non-blocking – DB runs in background thread)
+                self.card_ui.load_profile(face_id)
             else:
                 self.status_label.config(
                     text="Unknown",
@@ -118,6 +122,8 @@ class MainWindow:
         self.processing = False
 
     def close(self):
+        if hasattr(self, "card_ui"):
+            self.card_ui.destroy()
         self.camera.release()
         self.root.destroy()
 
