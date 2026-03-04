@@ -1,14 +1,18 @@
+import os
 import sqlite3
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Directory where this file (faces.py) lives — used to locate profiles.db
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 class ProfileDB:
     """Manages SQLite storage for face profiles."""
 
-    def __init__(self, db_path: str = "profiles.db"):
-        self._db_path = db_path
+    def __init__(self, db_path: str | None = None):
+        self._db_path = db_path or os.path.join(_THIS_DIR, "profiles.db")
         self._connection: sqlite3.Connection | None = None
 
     # -- connection management --------------------------------------------------

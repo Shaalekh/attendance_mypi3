@@ -1,13 +1,20 @@
 import os
+import sys
 import logging
 import tkinter as tk
 from PIL import Image, ImageTk
+
+# Ensure sibling modules (faces.py) are importable regardless of CWD
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
+
 from faces import ProfileDB
 
 logger = logging.getLogger(__name__)
 
 # Directory that sits next to this file
-_IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "images")
+_IMAGES_DIR = os.path.join(_THIS_DIR, "images")
 
 
 class CardUI(tk.Tk):
