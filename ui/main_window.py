@@ -13,7 +13,7 @@ from services.gpio_service import GPIOService
 
 class MainWindow:
     # GPIO BCM pin number for the latching config switch
-    _CONFIG_SWITCH_PIN = 17
+    _CONFIG_SWITCH_PIN = 26
     # Flask web-server port
     _WEB_PORT = 5000
 

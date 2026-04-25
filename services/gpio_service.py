@@ -22,7 +22,7 @@ class GPIOService:
 
     _POLL_INTERVAL = 0.1  # seconds between pin reads
 
-    def __init__(self, pin: int = 17, callback_on=None, callback_off=None):
+    def __init__(self, pin: int = 26, callback_on=None, callback_off=None):
         self._pin = pin
         self._callback_on = callback_on
         self._callback_off = callback_off
