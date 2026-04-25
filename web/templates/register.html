@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Register User — Attendance System</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #0f0f1a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      font-size: 0.85rem;
+      color: #888;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: #1c1c2e;
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+
+    /* --- Camera section --- */
+    .camera-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    #live-stream, #preview-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    #preview-img { display: none; }
+
+    /* --- Buttons --- */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-capture  { background: #3b5bdb; color: #fff; width: 100%; margin-bottom: 8px; }
+    .btn-retake   { background: #444; color: #ccc; flex: 1; }
+    .btn-register { background: #2f9e44; color: #fff; flex: 1; }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    /* --- Form --- */
+    .form-section { margin-top: 16px; }
+    label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 4px; }
+    input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      background: #2a2a3e;
+      border: 1px solid #3a3a54;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 0.95rem;
+      margin-bottom: 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus { border-color: #3b5bdb; }
+
+    /* --- Status / feedback --- */
+    #status {
+      margin-top: 14px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    #status.success { background: #1a3d25; color: #6fcf97; border: 1px solid #2f9e44; }
+    #status.error   { background: #3d1a1a; color: #f87171; border: 1px solid #c0392b; }
+
+    .face-id-hint {
+      font-size: 0.78rem;
+      color: #666;
+      margin-top: -8px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Register New User</h1>
+  <p class="subtitle">Attendance System — Configuration Mode</p>
+
+  <div class="card">
+    <!-- Camera / Preview -->
+    <div class="camera-wrapper">
+      <img id="live-stream" src="/video_feed" alt="Live camera" />
+      <img id="preview-img" alt="Captured photo" />
+    </div>
+
+    <button class="btn btn-capture" id="btn-capture">📷 Capture Photo</button>
+
+    <div class="btn-row" id="retake-row" style="display:none;">
+      <button class="btn btn-retake" id="btn-retake">🔄 Retake</button>
+      <button class="btn btn-register" id="btn-register" disabled>✅ Register</button>
+    </div>
+
+    <!-- Profile form -->
+    <div class="form-section">
+      <label for="name">Full Name (English) *</label>
+      <input type="text" id="name" placeholder="e.g. Aalekh Babu" autocomplete="off" />
+      <p class="face-id-hint" id="face-id-hint"></p>
+
+      <label for="hindi-name">नाम (हिंदी — optional)</label>
+      <input type="text" id="hindi-name" placeholder="e.g. आलेख बाबू" autocomplete="off" />
+    </div>
+
+    <div id="status"></div>
+  </div>
+
+  <script>
+    const liveStream  = document.getElementById("live-stream");
+    const previewImg  = document.getElementById("preview-img");
+    const btnCapture  = document.getElementById("btn-capture");
+    const btnRetake   = document.getElementById("btn-retake");
+    const btnRegister = document.getElementById("btn-register");
+    const retakeRow   = document.getElementById("retake-row");
+    const nameInput   = document.getElementById("name");
+    const hindiInput  = document.getElementById("hindi-name");
+    const faceIdHint  = document.getElementById("face-id-hint");
+    const statusDiv   = document.getElementById("status");
+
+    let photoCaptured = false;
+
+    /* --- face_id preview --- */
+    function nameToFaceId(name) {
+      return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    }
+
+    nameInput.addEventListener("input", () => {
+      const fid = nameToFaceId(nameInput.value);
+      faceIdHint.textContent = fid ? "face_id will be: " + fid : "";
+      updateRegisterBtn();
+    });
+
+    function updateRegisterBtn() {
+      btnRegister.disabled = !(photoCaptured && nameInput.value.trim().length > 0);
+    }
+
+    /* --- Capture --- */
+    btnCapture.addEventListener("click", async () => {
+      btnCapture.disabled = true;
+      showStatus("", "");
+
+      try {
+        const resp = await fetch("/capture", { method: "POST" });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ error: "Unknown error" }));
+          throw new Error(err.error || resp.statusText);
+        }
+
+        // resp is the JPEG bytes — turn it into an object URL for preview
+        const blob = await resp.blob();
+        previewImg.src = URL.createObjectURL(blob);
+        previewImg.style.display = "block";
+        liveStream.style.display = "none";
+        btnCapture.style.display = "none";
+        retakeRow.style.display  = "flex";
+        photoCaptured = true;
+        updateRegisterBtn();
+      } catch (e) {
+        showStatus("Capture failed: " + e.message, "error");
+        btnCapture.disabled = false;
+      }
+    });
+
+    /* --- Retake --- */
+    btnRetake.addEventListener("click", () => {
+      photoCaptured = false;
+      previewImg.style.display = "none";
+      // Reload live stream (append timestamp to bust cache)
+      liveStream.src = "/video_feed?" + Date.now();
+      liveStream.style.display = "block";
+      btnCapture.style.display = "block";
+      retakeRow.style.display  = "none";
+      btnCapture.disabled = false;
+      updateRegisterBtn();
+      showStatus("", "");
+    });
+
+    /* --- Register --- */
+    btnRegister.addEventListener("click", async () => {
+      const name = nameInput.value.trim();
+      if (!name) { showStatus("Please enter the person's name.", "error"); return; }
+      if (!photoCaptured)  { showStatus("Please capture a photo first.", "error"); return; }
+
+      btnRegister.disabled = true;
+      showStatus("Saving...", "");
+
+      const body = new FormData();
+      body.append("name", name);
+      body.append("hindi_name", hindiInput.value.trim());
+
+      try {
+        const resp  = await fetch("/register", { method: "POST", body });
+        const data  = await resp.json();
+
+        if (!resp.ok || !data.success) throw new Error(data.error || "Registration failed");
+
+        showStatus(
+          `✅ Registered successfully! face_id: ${data.face_id}`,
+          "success"
+        );
+        // Reset form for next registration
+        nameInput.value  = "";
+        hindiInput.value = "";
+        faceIdHint.textContent = "";
+        btnRetake.click();   // go back to live camera
+      } catch (e) {
+        showStatus("Error: " + e.message, "error");
+        btnRegister.disabled = false;
+      }
+    });
+
+    function showStatus(msg, type) {
+      statusDiv.className = type;
+      statusDiv.textContent = msg;
+      statusDiv.style.display = msg ? "block" : "none";
+    }
+  </script>
+</body>
+</html>
