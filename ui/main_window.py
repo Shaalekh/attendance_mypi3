@@ -4,11 +4,14 @@ from PIL import Image, ImageTk
 import cv2
 import time
 import threading
+import logging
 
 from services.camera_service import CameraService
 from services.face_service import FaceService
 from services.aws_service import AWSService
 from services.gpio_service import GPIOService
+
+logger = logging.getLogger(__name__)
 
 
 class MainWindow:
@@ -16,6 +19,8 @@ class MainWindow:
     _CONFIG_SWITCH_PIN = 26
     # Flask web-server port
     _WEB_PORT = 5000
+    # Switch must remain OFF this long before reboot is triggered
+    _REBOOT_HOLD_SECONDS = 2
 
     def __init__(self):
         self.root = tk.Tk()
@@ -29,9 +34,10 @@ class MainWindow:
         # ESC to exit (dev only)
         self.root.bind("<Escape>", lambda e: self.close())
 
-        self.camera = CameraService()
+        self.camera = None
         self.face_service = FaceService()
         self.aws_service = AWSService()
+        self._camera_error: str | None = None
 
         self.last_check = 0
         self.processing = False
@@ -41,9 +47,16 @@ class MainWindow:
         self._config_mode = False
         self._config_frame: tk.Frame | None = None
         self._ip_label: tk.Label | None = None
+        self._mode_label: tk.Label | None = None
         self._web_thread: threading.Thread | None = None
+        self._gpio_service: GPIOService | None = None
+        self._switch_is_on = False
+        self._reboot_armed = False
+        self._reboot_after_id: str | None = None
+        self._rebooting = False
 
         self.create_widgets()
+        self._initialise_camera()
         self._setup_gpio()
         self.update_camera()
 
@@ -60,12 +73,36 @@ class MainWindow:
         )
         self.status_label.place(x=20, y=20)
 
+    def _initialise_camera(self) -> None:
+        try:
+            self.camera = CameraService()
+            self.status_label.config(text="Ready", fg="white")
+        except Exception as exc:
+            self.camera = None
+            self._camera_error = str(exc)
+            logger.exception("Camera startup failed")
+            self.status_label.config(
+                text=f"Camera Error: {self._camera_error}",
+                fg="orange",
+            )
+
     def update_camera(self):
         # Don't run the attendance loop while in config mode
         if self._config_mode:
+            self.root.after(200, self.update_camera)
             return
 
-        frame = self.camera.get_frame()
+        if self.camera is None:
+            self.root.after(500, self.update_camera)
+            return
+
+        try:
+            frame = self.camera.get_frame()
+        except Exception as exc:
+            logger.exception("Camera frame capture failed")
+            self.status_label.config(text=f"Camera Frame Error: {exc}", fg="orange")
+            self.root.after(500, self.update_camera)
+            return
 
         if frame is not None:
 
@@ -109,6 +146,8 @@ class MainWindow:
 
             self.camera_label.imgtk = imgtk
             self.camera_label.configure(image=imgtk)
+        elif not self.processing:
+            self.status_label.config(text="Waiting for camera frame...", fg="yellow")
 
         self.root.after(30, self.update_camera)
 
@@ -136,9 +175,13 @@ class MainWindow:
         self.processing = False
 
     def close(self):
+        if self._reboot_after_id:
+            self.root.after_cancel(self._reboot_after_id)
+            self._reboot_after_id = None
         if self._gpio_service:
             self._gpio_service.stop()
-        self.camera.release()
+        if self.camera:
+            self.camera.release()
         self.root.destroy()
 
     def run(self):
@@ -150,10 +193,23 @@ class MainWindow:
         """Start monitoring the latching switch in a background thread."""
         self._gpio_service = GPIOService(
             pin=self._CONFIG_SWITCH_PIN,
-            callback_on=lambda: self.root.after(0, self._enter_config_mode),
+            pull_up=True,
+            active_low=True,
+            callback_on=lambda: self.root.after(0, self._on_switch_on),
             callback_off=lambda: self.root.after(0, self._on_switch_off),
         )
         self._gpio_service.start()
+
+    def _on_switch_on(self) -> None:
+        self._switch_is_on = True
+        if self._reboot_after_id:
+            self.root.after_cancel(self._reboot_after_id)
+            self._reboot_after_id = None
+        self._enter_config_mode()
+        if self._config_mode:
+            self._reboot_armed = True
+            if self._mode_label:
+                self._mode_label.config(text="Switch ON detected. Reboot armed.", fg="#00e676")
 
     def _enter_config_mode(self) -> None:
         """Switch the display to config mode and start the Flask web server."""
@@ -165,15 +221,19 @@ class MainWindow:
         self._config_frame = tk.Frame(self.root, bg="black")
         self._config_frame.place(x=0, y=0, relwidth=1, relheight=1)
 
+        # Center the config content horizontally with a fixed top offset.
+        content_frame = tk.Frame(self._config_frame, bg="black")
+        content_frame.place(relx=0.5, y=0, anchor="n")
+
         # --- WiFi / network icon (canvas arcs) ---
         icon_canvas = tk.Canvas(
-            self._config_frame,
+            content_frame,
             bg="black",
             width=200,
             height=180,
             highlightthickness=0,
         )
-        icon_canvas.pack(pady=(50, 0))
+        icon_canvas.pack(pady=(0, 0))
 
         cx, cy = 100, 155  # anchor point of the WiFi symbol (foot / dot)
         icon_canvas.create_oval(cx - 6, cy - 6, cx + 6, cy + 6, fill="white", outline="white")
@@ -186,44 +246,91 @@ class MainWindow:
 
         # --- Labels ---
         tk.Label(
-            self._config_frame,
-            text="Configuration Mode",
+            content_frame,
+            text="Web Server Mode",
             font=("Arial", 26, "bold"),
             fg="white",
             bg="black",
-        ).pack(pady=(10, 4))
+        ).pack(pady=(10, 2))
 
         tk.Label(
-            self._config_frame,
-            text="Open this address in your browser:",
-            font=("Arial", 14),
+            content_frame,
+            text="Open this address in your browser",
+            font=("Arial", 16),
             fg="#aaaaaa",
             bg="black",
         ).pack()
 
+        self._mode_label = tk.Label(
+            content_frame,
+            text="Starting server...",
+            font=("Arial", 14, "bold"),
+            fg="#fdd835",
+            bg="black",
+        )
+        self._mode_label.pack(pady=(12, 0))
+
         self._ip_label = tk.Label(
-            self._config_frame,
+            content_frame,
             text="Detecting IP…",
-            font=("Arial", 22, "bold"),
+            font=("Arial", 16),
             fg="#00e676",
             bg="black",
         )
         self._ip_label.pack(pady=(6, 0))
 
         tk.Label(
-            self._config_frame,
-            text="Turn the switch off to reboot",
-            font=("Arial", 11, "italic"),
+            content_frame,
+            text=f"Turn the switch OFF and hold for {self._REBOOT_HOLD_SECONDS} seconds to reboot",
+            font=("Arial", 12, "italic"),
             fg="#555555",
             bg="black",
         ).pack(pady=(28, 0))
 
         # Start the Flask server (daemon thread) and update the IP label
         from web.app import start_server, get_local_ip
-        self._web_thread = start_server(self.camera, port=self._WEB_PORT)
-        ip = get_local_ip()
-        self._ip_label.config(text=f"http://{ip}:{self._WEB_PORT}")
+        try:
+            self._web_thread = start_server(self.camera, port=self._WEB_PORT)
+            ip = get_local_ip()
+            self._ip_label.config(text=f"http://{ip}:{self._WEB_PORT}")
+            if self._mode_label:
+                self._mode_label.config(text="Server running", fg="#00e676")
+        except Exception as exc:
+            logger.exception("Failed to start config web server")
+            self._ip_label.config(text="Server start failed")
+            if self._mode_label:
+                self._mode_label.config(text=str(exc), fg="#ff6e40")
 
     def _on_switch_off(self) -> None:
-        """Reboot the device when the latching switch is released."""
+        """Reboot the device when the latching switch remains OFF."""
+        self._switch_is_on = False
+        if self._rebooting:
+            return
+        if not self._reboot_armed:
+            if self._mode_label:
+                self._mode_label.config(
+                    text="Switch OFF ignored (reboot not armed)",
+                    fg="#aaaaaa",
+                )
+            return
+        if self._mode_label:
+            self._mode_label.config(
+                text=f"Switch OFF detected. Rebooting in {self._REBOOT_HOLD_SECONDS}s...",
+                fg="#fdd835",
+            )
+        if self._reboot_after_id:
+            self.root.after_cancel(self._reboot_after_id)
+        self._reboot_after_id = self.root.after(
+            self._REBOOT_HOLD_SECONDS * 1000,
+            self._reboot_if_switch_stays_off,
+        )
+
+    def _reboot_if_switch_stays_off(self) -> None:
+        self._reboot_after_id = None
+        if self._switch_is_on or self._rebooting or not self._reboot_armed:
+            return
+        self._rebooting = True
+        self._reboot_armed = False
+        if self._mode_label:
+            self._mode_label.config(text="Rebooting now...", fg="#ff6e40")
         subprocess.run(["sudo", "reboot"], check=False)

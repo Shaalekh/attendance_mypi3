@@ -1,0 +1,6 @@
+boto3
+flask
+pillow
+opencv-python
+picamera2
+RPi.GPIO

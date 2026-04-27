@@ -10,6 +10,8 @@ A real-time face-recognition attendance system designed to run on a Raspberry Pi
 - Face recognition using AWS Rekognition
 - Threaded AWS calls to keep the UI responsive
 - Recognition triggered only when a face is large enough (nearby), with a 3-second cooldown
+- GPIO config switch support with debounced state changes
+- Web-server mode screen that shows the device access URL
 
 ## Project Structure
 
@@ -40,17 +42,25 @@ attendance_mypi3/
 - OpenCV (`opencv-python` or the system `python3-opencv` package)
 - Pillow
 - Boto3
+- Flask
+- RPi.GPIO
 
 Install dependencies:
 
 ```bash
-pip install boto3 opencv-python pillow picamera2
+pip install -r requirements.txt
 ```
 
 > **Note:** On Raspberry Pi OS, `picamera2` and `opencv4` are best installed via `apt`:
 > ```bash
 > sudo apt install python3-picamera2 python3-opencv
 > ```
+
+Verify dependencies against your current environment:
+
+```bash
+python scripts/check_dependencies.py
+```
 
 ### AWS Setup
 
@@ -80,6 +90,8 @@ python main.py
 ```
 
 The application launches in fullscreen mode. To mark attendance, a person simply walks up close to the camera. Once the face is detected at sufficient size, the system automatically queries AWS Rekognition and displays the recognized name (green) or "Unknown" (red) on screen — no touching or interaction required.
+
+When the GPIO config switch is turned on, the app enters **Web Server Mode** and shows the URL (IP + port) to open in a browser. Turning the switch off and keeping it off for 2 seconds triggers reboot.
 
 Press **Esc** to quit (development mode).
 
