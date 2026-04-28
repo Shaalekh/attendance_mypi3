@@ -12,6 +12,8 @@ A real-time face-recognition attendance system designed to run on a Raspberry Pi
 - Recognition triggered only when a face is large enough (nearby), with a 3-second cooldown
 - GPIO config switch support with debounced state changes
 - Web-server mode screen that shows the device access URL
+- Registration page uses the browser device camera (mobile/desktop) with front/rear switch
+- Registration stores explicit `face_id`, names, and automatic registration timestamp
 
 ## Project Structure
 
@@ -92,6 +94,8 @@ python main.py
 The application launches in fullscreen mode. To mark attendance, a person simply walks up close to the camera. Once the face is detected at sufficient size, the system automatically queries AWS Rekognition and displays the recognized name (green) or "Unknown" (red) on screen — no touching or interaction required.
 
 When the GPIO config switch is turned on, the app enters **Web Server Mode** and shows the URL (IP + port) to open in a browser. Turning the switch off and keeping it off for 2 seconds triggers reboot.
+
+In Web Server Mode, open the URL from a phone/laptop browser and allow camera access. The registration page uses that device camera (not the Pi camera): live preview uses browser `getUserMedia` and, on some mobile browsers, requires a secure context (`https://`). Camera permission must be granted in the browser. If live camera preview is unavailable, the page provides a fallback to capture/upload a photo from the device camera or gallery. It supports front/rear switching where available, and requires `face_id`, English name, and optional Hindi name. Registration indexes the face into Rekognition and stores profile metadata with automatic registration timestamp.
 
 Press **Esc** to quit (development mode).
 
