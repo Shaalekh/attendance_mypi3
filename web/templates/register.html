@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Register User — Attendance System</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #0f0f1a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      font-size: 0.85rem;
+      color: #888;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .card {
+      background: #1c1c2e;
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+
+    .camera-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    #live-video, #preview-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    #preview-img { display: none; }
+    #capture-canvas { display: none; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-capture  { background: #3b5bdb; color: #fff; width: 100%; margin-bottom: 8px; }
+    .btn-switch   { background: #7950f2; color: #fff; width: 100%; margin-bottom: 8px; }
+    .btn-upload   { background: #0b7285; color: #fff; width: 100%; margin-bottom: 8px; }
+    .btn-retake   { background: #444; color: #ccc; flex: 1; }
+    .btn-register { background: #2f9e44; color: #fff; flex: 1; }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .form-section { margin-top: 16px; }
+    label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 4px; }
+    input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      background: #2a2a3e;
+      border: 1px solid #3a3a54;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 0.95rem;
+      margin-bottom: 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus { border-color: #3b5bdb; }
+
+    #status {
+      margin-top: 14px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      display: none;
+      word-break: break-word;
+    }
+    #status.success { background: #1a3d25; color: #6fcf97; border: 1px solid #2f9e44; }
+    #status.error   { background: #3d1a1a; color: #f87171; border: 1px solid #c0392b; }
+    #status.info    { background: #1a2f4a; color: #93c5fd; border: 1px solid #2563eb; }
+
+    .face-id-hint {
+      font-size: 0.78rem;
+      color: #666;
+      margin-top: -8px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Register New User</h1>
+  <p class="subtitle">Uses this device camera (mobile or desktop browser)</p>
+
+  <div class="card">
+    <div class="camera-wrapper">
+      <video id="live-video" autoplay playsinline muted></video>
+      <img id="preview-img" alt="Captured photo" />
+      <canvas id="capture-canvas"></canvas>
+    </div>
+
+    <button class="btn btn-switch" id="btn-switch">🔁 Switch Camera</button>
+    <button class="btn btn-capture" id="btn-capture">📷 Capture Photo</button>
+    <button class="btn btn-upload" id="btn-upload" type="button">📁 Use Camera / Photo</button>
+    <input id="file-photo" type="file" accept="image/*" capture="environment" style="display:none;" />
+
+    <div class="btn-row" id="retake-row" style="display:none;">
+      <button class="btn btn-retake" id="btn-retake">🔄 Retake</button>
+      <button class="btn btn-register" id="btn-register" disabled>✅ Register</button>
+    </div>
+
+    <div class="form-section">
+      <label for="face-id">Face ID *</label>
+      <input type="text" id="face-id" placeholder="e.g. aalekh_babu" autocomplete="off" />
+
+      <label for="name">Full Name (English) *</label>
+      <input type="text" id="name" placeholder="e.g. Aalekh Babu" autocomplete="off" />
+
+      <label for="hindi-name">नाम (हिंदी — optional)</label>
+      <input type="text" id="hindi-name" placeholder="e.g. आलेख बाबू" autocomplete="off" />
+
+      <p class="face-id-hint" id="face-id-hint"></p>
+    </div>
+
+    <div id="status"></div>
+  </div>
+
+  <script>
+    const liveVideo   = document.getElementById("live-video");
+    const previewImg  = document.getElementById("preview-img");
+    const canvas      = document.getElementById("capture-canvas");
+    const btnSwitch   = document.getElementById("btn-switch");
+    const btnCapture  = document.getElementById("btn-capture");
+    const btnUpload   = document.getElementById("btn-upload");
+    const filePhoto   = document.getElementById("file-photo");
+    const btnRetake   = document.getElementById("btn-retake");
+    const btnRegister = document.getElementById("btn-register");
+    const retakeRow   = document.getElementById("retake-row");
+    const faceIdInput = document.getElementById("face-id");
+    const nameInput   = document.getElementById("name");
+    const hindiInput  = document.getElementById("hindi-name");
+    const faceIdHint  = document.getElementById("face-id-hint");
+    const statusDiv   = document.getElementById("status");
+
+    let stream = null;
+    let currentFacingMode = "environment";
+    let photoCaptured = false;
+    let capturedBlob = null;
+    let previewObjectUrl = null;
+    let liveCameraAvailable = false;
+
+    function sanitizeFaceId(value) {
+      return value.toLowerCase().trim().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+    }
+
+    function updateFaceIdHint() {
+      const cleaned = sanitizeFaceId(faceIdInput.value);
+      faceIdHint.textContent = cleaned ? `Normalized face_id: ${cleaned}` : "";
+    }
+
+    function updateRegisterBtn() {
+      btnRegister.disabled = !(
+        photoCaptured &&
+        faceIdInput.value.trim().length > 0 &&
+        nameInput.value.trim().length > 0
+      );
+    }
+
+    function setLiveControlsVisible(visible) {
+      btnCapture.style.display = visible ? "block" : "none";
+      btnSwitch.style.display = visible ? "block" : "none";
+      btnCapture.disabled = !visible;
+      btnSwitch.disabled = !visible;
+      liveVideo.style.display = visible ? "block" : "none";
+    }
+
+    function releasePreviewUrl() {
+      if (!previewObjectUrl) return;
+      URL.revokeObjectURL(previewObjectUrl);
+      previewObjectUrl = null;
+    }
+
+    function setCapturedPhoto(blob) {
+      releasePreviewUrl();
+      capturedBlob = blob;
+      previewObjectUrl = URL.createObjectURL(blob);
+      previewImg.src = previewObjectUrl;
+      previewImg.style.display = "block";
+      liveVideo.style.display = "none";
+      btnCapture.style.display = "none";
+      btnSwitch.style.display = "none";
+      retakeRow.style.display = "flex";
+      photoCaptured = true;
+      updateRegisterBtn();
+    }
+
+    function cameraErrorMessage(err) {
+      const name = err && err.name ? err.name : "";
+      if (!window.isSecureContext || name === "SecurityError") {
+        return "Live camera preview needs HTTPS (secure context). Open this page with HTTPS, or use Camera / Photo upload below.";
+      }
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        return "Camera permission was denied. Allow camera access in browser settings, or use Camera / Photo upload below.";
+      }
+      if (name === "NotFoundError" || name === "DevicesNotFoundError" || name === "OverconstrainedError") {
+        return "No usable camera was found. Please use Camera / Photo upload below.";
+      }
+      if (name === "NotReadableError" || name === "TrackStartError" || name === "AbortError") {
+        return "Camera is busy or unavailable right now. Close other camera apps and retry, or use Camera / Photo upload below.";
+      }
+      return `Could not start live camera preview (${name || "unknown error"}). You can still use Camera / Photo upload below.`;
+    }
+
+    async function stopStream() {
+      if (!stream) return;
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+
+    async function startCamera(preferredFacingMode) {
+      await stopStream();
+      const constraints = {
+        audio: false,
+        video: { facingMode: { ideal: preferredFacingMode } }
+      };
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
+      liveVideo.srcObject = stream;
+      await liveVideo.play();
+    }
+
+    async function switchCamera() {
+      currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+      await startCamera(currentFacingMode);
+      showStatus(`Camera switched to: ${currentFacingMode}`, "info");
+    }
+
+    function captureFromVideo() {
+      const width = liveVideo.videoWidth;
+      const height = liveVideo.videoHeight;
+      if (!width || !height) throw new Error("Camera not ready yet.");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(liveVideo, 0, 0, width, height);
+      return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (!blob) reject(new Error("Failed to capture image."));
+          else resolve(blob);
+        }, "image/jpeg", 0.92);
+      });
+    }
+
+    faceIdInput.addEventListener("input", () => {
+      updateFaceIdHint();
+      updateRegisterBtn();
+    });
+    nameInput.addEventListener("input", updateRegisterBtn);
+
+    btnSwitch.addEventListener("click", async () => {
+      btnSwitch.disabled = true;
+      try {
+        await switchCamera();
+      } catch (e) {
+        showStatus("Camera switch failed: " + e.message, "error");
+      } finally {
+        btnSwitch.disabled = false;
+      }
+    });
+
+    btnCapture.addEventListener("click", async () => {
+      btnCapture.disabled = true;
+      showStatus("", "");
+      try {
+        const blob = await captureFromVideo();
+        setCapturedPhoto(blob);
+      } catch (e) {
+        showStatus("Capture failed: " + e.message, "error");
+        btnCapture.disabled = false;
+      }
+    });
+
+    btnUpload.addEventListener("click", () => {
+      filePhoto.click();
+    });
+
+    filePhoto.addEventListener("change", () => {
+      const file = filePhoto.files && filePhoto.files[0] ? filePhoto.files[0] : null;
+      filePhoto.value = "";
+      if (!file) return;
+      if (!file.type || !file.type.startsWith("image/")) {
+        showStatus("Please select an image file.", "error");
+        return;
+      }
+      setCapturedPhoto(file);
+      showStatus("Photo selected. Fill details and tap Register.", "info");
+    });
+
+    btnRetake.addEventListener("click", () => {
+      photoCaptured = false;
+      capturedBlob = null;
+      releasePreviewUrl();
+      previewImg.style.display = "none";
+      setLiveControlsVisible(liveCameraAvailable);
+      retakeRow.style.display  = "none";
+      btnCapture.disabled = false;
+      updateRegisterBtn();
+      showStatus("", "");
+    });
+
+    btnRegister.addEventListener("click", async () => {
+      const faceId = faceIdInput.value.trim();
+      const name = nameInput.value.trim();
+      if (!faceId) { showStatus("Please enter face_id.", "error"); return; }
+      if (!name) { showStatus("Please enter English name.", "error"); return; }
+      if (!photoCaptured || !capturedBlob) { showStatus("Please capture a photo first.", "error"); return; }
+
+      btnRegister.disabled = true;
+      showStatus("Saving...", "info");
+
+      const body = new FormData();
+      body.append("face_id", faceId);
+      body.append("name", name);
+      body.append("hindi_name", hindiInput.value.trim());
+      body.append("photo", capturedBlob, "capture.jpg");
+
+      try {
+        const resp = await fetch("/register", { method: "POST", body });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || "Registration failed");
+
+        showStatus(
+          `✅ Registered! face_id: ${data.face_id}, registered_at: ${data.registered_at}`,
+          "success"
+        );
+
+        faceIdInput.value = "";
+        nameInput.value = "";
+        hindiInput.value = "";
+        faceIdHint.textContent = "";
+        btnRetake.click();
+      } catch (e) {
+        showStatus("Error: " + e.message, "error");
+        btnRegister.disabled = false;
+      }
+    });
+
+    function showStatus(msg, type) {
+      statusDiv.className = type;
+      statusDiv.textContent = msg;
+      statusDiv.style.display = msg ? "block" : "none";
+    }
+
+    (async () => {
+      updateFaceIdHint();
+
+      const hasGetUserMedia = !!(navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function");
+      if (!hasGetUserMedia) {
+        setLiveControlsVisible(false);
+        if (!window.isSecureContext) {
+          showStatus("Live camera preview is blocked on HTTP/insecure pages. Open this app over HTTPS for live preview, or use Camera / Photo upload below.", "info");
+        } else {
+          showStatus("This browser does not provide live camera preview APIs. Use Camera / Photo upload below.", "info");
+        }
+        return;
+      }
+
+      if (!window.isSecureContext) {
+        setLiveControlsVisible(false);
+        showStatus("Live camera preview requires HTTPS (secure context). Use Camera / Photo upload below, or open this page via HTTPS.", "info");
+        return;
+      }
+
+      try {
+        await startCamera(currentFacingMode);
+        liveCameraAvailable = true;
+        setLiveControlsVisible(true);
+      } catch (e) {
+        liveCameraAvailable = false;
+        setLiveControlsVisible(false);
+        showStatus(cameraErrorMessage(e), "error");
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import logging
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +41,15 @@ class ProfileDB:
                         face_id    TEXT PRIMARY KEY,
                         name       TEXT NOT NULL,
                         hindi_name TEXT,
-                        image_url  TEXT
+                        image_url  TEXT,
+                        registered_at TEXT
                     )
                 """)
+                columns = {
+                    row["name"] for row in conn.execute("PRAGMA table_info(profiles)")
+                }
+                if "registered_at" not in columns:
+                    conn.execute("ALTER TABLE profiles ADD COLUMN registered_at TEXT")
             logger.info("Database initialised successfully.")
         except sqlite3.Error as e:
             logger.error("Failed to initialise database: %s", e)
@@ -62,17 +69,23 @@ class ProfileDB:
             raise
 
     def add_profile(
-        self, face_id: str, name: str, hindi_name: str, image_url: str
+        self,
+        face_id: str,
+        name: str,
+        hindi_name: str | None,
+        image_url: str,
+        registered_at: str | None = None,
     ) -> None:
+        registered_at = registered_at or datetime.now(timezone.utc).isoformat()
         try:
             conn = self._get_connection()
             with conn:  # automatic commit / rollback
                 conn.execute(
                     """
-                    INSERT INTO profiles (face_id, name, hindi_name, image_url)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO profiles (face_id, name, hindi_name, image_url, registered_at)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
-                    (face_id, name, hindi_name, image_url),
+                    (face_id, name, hindi_name, image_url, registered_at),
                 )
             logger.info("Profile added for face_id=%s", face_id)
         except sqlite3.IntegrityError:
